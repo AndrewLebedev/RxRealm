@@ -521,6 +521,11 @@ public extension Observable where Element: Object {
                           properties: [String]? = nil) -> Observable<Element> {
 
         return Observable<Element>.create { observer in
+            guard !object.isInvalidated else {
+                observer.onError(RxRealmError.objectDeleted)
+                return Disposables.create()
+            }
+
             if emitInitialValue {
                 observer.onNext(object)
             }
@@ -556,6 +561,11 @@ public extension Observable where Element: Object {
     public static func propertyChanges(object: Element) -> Observable<PropertyChange> {
 
         return Observable<PropertyChange>.create { observer in
+            guard !object.isInvalidated else {
+                observer.onError(RxRealmError.objectDeleted)
+                return Disposables.create()
+            }
+
             let token = object.observe { change in
                 switch change {
                 case .change(let changes):
