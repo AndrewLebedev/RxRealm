@@ -146,6 +146,51 @@ public extension ObservableType where E: NotificationEmitter {
         }
     }
 
+    public static func collection<T>(from collection: T, synchronousStart: Bool = true) -> Observable<T> where T:RealmCollection
+    {
+        return Observable.create { observer in
+            guard !collection.isInvalidated else {
+                observer.onError(RxRealmError.objectDeleted)
+                return Disposables.create()
+            }
+
+            if synchronousStart {
+                observer.onNext(collection)
+            }
+
+            let token = collection.observe { changeset in
+                let value: T
+
+                switch changeset {
+                    case .initial(let latestValue):
+                        guard !synchronousStart else { return }
+                        guard !latestValue.isInvalidated else {
+                            observer.onError(RxRealmError.objectDeleted)
+                            return
+                        }
+                        value = latestValue
+
+                    case .update(let latestValue, _, _, _):
+                        guard !latestValue.isInvalidated else {
+                            observer.onError(RxRealmError.objectDeleted)
+                            return
+                        }
+                        value = latestValue
+
+                    case .error(let error):
+                        observer.onError(error)
+                        return
+                }
+
+                observer.onNext(value)
+            }
+
+            return Disposables.create {
+                token.invalidate()
+            }
+        }
+    }
+
     @available(*, deprecated, renamed: "array(from:synchronousStart:)")
     public static func arrayFrom(_ collection: E, scheduler: ImmediateSchedulerType = CurrentThreadScheduler.instance) -> Observable<Array<E.ElementType>> {
         return array(from: collection)
