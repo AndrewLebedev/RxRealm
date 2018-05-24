@@ -38,6 +38,8 @@ public protocol NotificationEmitter {
     func toArray() -> [ElementType]
 
     func toAnyCollection() -> AnyRealmCollection<ElementType>
+
+    var isInvalidated:Bool { get }
 }
 
 extension List: NotificationEmitter {
@@ -116,39 +118,6 @@ public extension ObservableType where E: NotificationEmitter {
         -> Observable<E> {
 
         return Observable.create { observer in
-            if synchronousStart {
-                observer.onNext(collection)
-            }
-
-            let token = collection.observe { changeset in
-
-                let value: E
-
-                switch changeset {
-                    case .initial(let latestValue):
-                        guard !synchronousStart else { return }
-                        value = latestValue
-
-                    case .update(let latestValue, _, _, _):
-                        value = latestValue
-
-                    case .error(let error):
-                        observer.onError(error)
-                        return
-                }
-
-                observer.onNext(value)
-            }
-
-            return Disposables.create {
-                token.invalidate()
-            }
-        }
-    }
-
-    public static func collection<T>(from collection: T, synchronousStart: Bool = true) -> Observable<T> where T:RealmCollection
-    {
-        return Observable.create { observer in
             guard !collection.isInvalidated else {
                 observer.onError(RxRealmError.objectDeleted)
                 return Disposables.create()
@@ -159,7 +128,8 @@ public extension ObservableType where E: NotificationEmitter {
             }
 
             let token = collection.observe { changeset in
-                let value: T
+
+                let value: E
 
                 switch changeset {
                     case .initial(let latestValue):
@@ -233,6 +203,11 @@ public extension ObservableType where E: NotificationEmitter {
         -> Observable<(AnyRealmCollection<E.ElementType>, RealmChangeset?)> {
 
         return Observable.create { observer in
+            guard !collection.isInvalidated else {
+                observer.onError(RxRealmError.objectDeleted)
+                return Disposables.create()
+            }
+
             if synchronousStart {
                 observer.onNext((collection.toAnyCollection(), nil))
             }
@@ -242,9 +217,19 @@ public extension ObservableType where E: NotificationEmitter {
                 switch changeset {
                     case .initial(let value):
                         guard !synchronousStart else { return }
+                        guard !value.isInvalidated else {
+                            observer.onError(RxRealmError.objectDeleted)
+                            return
+                        }
                         observer.onNext((value, nil))
+
                     case .update(let value, let deletes, let inserts, let updates):
+                        guard !value.isInvalidated else {
+                            observer.onError(RxRealmError.objectDeleted)
+                            return
+                        }
                         observer.onNext((value, RealmChangeset(deleted: deletes, inserted: inserts, updated: updates)))
+
                     case .error(let error):
                         observer.onError(error)
                         return
